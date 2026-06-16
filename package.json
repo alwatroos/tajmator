@@ -1,10 +1,41 @@
 {
   "name": "tajmator",
-  "author": "alwatroos",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "Configurable anti-idle mouse mover built with Electron, React and Jotai.",
+  "author": "alwatroos",
   "license": "MIT",
+  "type": "module",
+  "main": "./out/main/index.js",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "dist": "electron-vite build && electron-builder",
+    "icons": "node scripts/generate-icons.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
   "dependencies": {
-    "robotjs": "^0.6.0"
+    "@nut-tree-fork/nut-js": "4.2.6",
+    "electron-store": "11.0.2"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.1",
+    "@vitejs/plugin-react": "6.0.2",
+    "electron": "42.4.0",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
+    "jotai": "2.20.1",
+    "jsdom": "29.1.1",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "vite": "8.0.16",
+    "vitest": "4.1.9"
   }
 }

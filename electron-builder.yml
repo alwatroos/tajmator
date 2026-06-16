@@ -1,0 +1,29 @@
+appId: com.alwatroos.tajmator
+productName: Tajmator
+npmRebuild: false
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - resources/**
+  - package.json
+asarUnpack:
+  - "**/*.node"
+  - node_modules/@nut-tree-fork/**
+publish:
+  provider: github
+  owner: alwatroos
+  repo: tajmator
+  releaseType: release
+linux:
+  target:
+    - AppImage
+  category: Utility
+mac:
+  target:
+    - dmg
+  category: public.app-category.utility
+win:
+  target:
+    - nsis

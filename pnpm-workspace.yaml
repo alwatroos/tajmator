@@ -1,0 +1,14 @@
+# pnpm 11 reads project-level settings from this file.
+# Hoisted node_modules keeps native deps resolvable for electron-builder.
+nodeLinker: hoisted
+
+# Disable release-age gating so CI installs the pinned versions deterministically.
+minimumReleaseAge: 0
+
+# Dependencies allowed to run install/build scripts (pnpm blocks others).
+# electron downloads its binary; libnut/esbuild ship native bits.
+allowBuilds:
+  electron: true
+  esbuild: true
+  '@nut-tree-fork/libnut': true
+  electron-winstaller: false
