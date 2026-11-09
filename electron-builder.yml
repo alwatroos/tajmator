@@ -1,0 +1,32 @@
+appId: com.alwatroos.tajmator
+productName: Tajmator
+directories:
+  output: release
+files:
+  - dist/**
+  - assets/tray/**
+  - assets/icon/icon.png
+  - package.json
+  # robotjs ships prebuilds for other platforms too; a macOS app needs none of them.
+  - "!node_modules/@jitsi/robotjs/prebuilds/{win32,linux}-*/**"
+asar: true
+# robotjs is a native module: its .node binary cannot be loaded from inside the asar archive.
+asarUnpack:
+  - node_modules/@jitsi/robotjs/**
+# @electron/rebuild builds robotjs for the target arch and the Electron ABI.
+npmRebuild: true
+nodeGypRebuild: false
+afterPack: scripts/after-pack.cjs
+mac:
+  # Generated from assets/icon/icon.svg by `pnpm icons`.
+  icon: assets/icon/icon.icns
+  # Unsigned by default: package.mjs passes -c.mac.identity=null unless TAJMATOR_SIGN=1.
+  hardenedRuntime: true
+  entitlements: signing/entitlements.mac.plist
+  entitlementsInherit: signing/entitlements.mac.plist
+  notarize: true
+  gatekeeperAssess: false
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip

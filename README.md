@@ -58,7 +58,22 @@ you started it from.
 
 ## Packaging note
 
-The app loads tray and dock icons from `assets/` at runtime, so the packaging config must include
-`assets/` next to the app code.
+`pnpm package` builds the app and packages it into `release/` as a macOS `.dmg` and `.zip`. It is
+unsigned and builds for `arm64` unless `TAJMATOR_ARCH=x64` is set; `TAJMATOR_SIGN=1` signs and
+notarises (release CI only). The packaged app (`electron-builder.yml`) includes:
+
+- `dist/**`, the bundled main process, preload script and renderer;
+- `assets/tray/**` and `assets/icon/icon.png`, which the app loads at runtime for the tray and dock
+  icons (the `.icns` app icon is applied by the packager);
+- `package.json`;
+- `@jitsi/robotjs`, the cursor library, unpacked from the asar archive so its native `.node` binary
+  loads (`app.asar.unpacked/node_modules/@jitsi/robotjs`).
+
+The app is signed with the hardened runtime and the entitlements in `signing/`.
 
 ## Releases and updates
+
+- [`docs/releases.md`](docs/releases.md): the one-click Tag release, the release workflow and its
+  secrets (by name only).
+- [`docs/app-updates.md`](docs/app-updates.md): how the app finds, verifies, downloads and installs
+  a new release.

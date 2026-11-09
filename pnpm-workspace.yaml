@@ -8,3 +8,5 @@ allowBuilds:
   esbuild: true
   # electron: false, its binary comes from scripts/ensure-electron.mjs.
   electron: false
+  # electron-winstaller only builds Windows installers; Tajmator ships macOS only.
+  electron-winstaller: false
