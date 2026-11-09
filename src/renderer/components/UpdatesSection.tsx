@@ -12,7 +12,7 @@ const PHASE_TEXT: Record<UpdatePhase, string> = {
   downloading: 'Downloading the update…',
   verified: 'The update is downloaded and verified.',
   installing: 'Installing the update…',
-  failed: 'The update check failed.',
+  failed: 'Update failed.',
 };
 
 const isHttps = (url: string): boolean => {

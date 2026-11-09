@@ -30,7 +30,7 @@ export function updateStatusLabel(status: UpdateStatus): string {
     case 'installing':
       return `Installing ${version}…`;
     case 'failed':
-      return 'Update check failed';
+      return 'Update failed';
     default:
       return `Version ${status.currentVersion}`;
   }

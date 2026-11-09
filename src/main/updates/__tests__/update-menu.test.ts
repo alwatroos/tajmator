@@ -29,7 +29,7 @@ describe('buildUpdateMenuSection', () => {
 
   it('shows the up to date and failed lines', () => {
     expect(labels(status('up_to_date'))[0]).toBe('Up to date · 1.0.0');
-    expect(labels(status('failed', { error: 'x' }))[0]).toBe('Update check failed');
+    expect(labels(status('failed', { error: 'x' }))[0]).toBe('Update failed');
     expect(labels(status('unverifiable'))).toHaveLength(2);
   });
 
