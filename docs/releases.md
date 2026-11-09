@@ -67,9 +67,28 @@ The `release` environment (deployment rule: tags `v*`) holds the secrets. Names 
 | `APPLE_API_ISSUER_ID`           | the issuer id                                                      |
 | `UPDATE_SIGNING_KEY` (optional) | Ed25519 private key that signs `update.json`                       |
 
-`UPDATE_SIGNING_KEY` must match the public key pinned in the app
-(`src/main/updates/update-constants.ts`); without it the release carries no manifest and the in-app
-updater finds nothing to install.
+`UPDATE_SIGNING_KEY` is an Ed25519 private key in PEM PKCS8 format (`update-manifest.mjs` also
+accepts the base64 of the PEM or of the PKCS8 DER). It lives only in the `release` environment and
+must match `UPDATE_PUBLIC_KEY` in `src/main/updates/update-constants.ts`. It is Tajmator's own key,
+not agentic-workflow's; only the Apple signing identity is shared. The SHA-256 fingerprint of the
+public key (SPKI DER) is `817f6cefe8091d654f0532576e10cea76b313974b9a41f82e5d7db4c04cdbd55`.
+Without the secret the release carries no manifest and the in-app updater finds nothing to
+install.
+
+### Rotating the update signing key
+
+1. Generate a key with `openssl genpkey -algorithm ED25519 -out update-signing.pem`. Derive the
+   public key with `openssl pkey -in update-signing.pem -pubout -outform DER | base64` and its
+   fingerprint with `openssl pkey -in update-signing.pem -pubout -outform DER | shasum -a 256`.
+2. If installed apps exist, first ship one release that pins the new `UPDATE_PUBLIC_KEY` while it
+   is still signed with the old secret, so installed apps can verify it and pick up the new pin.
+3. Set the secret in the `release` environment to the new PEM:
+   `gh secret set UPDATE_SIGNING_KEY --env release < update-signing.pem`.
+4. Update `UPDATE_PUBLIC_KEY`, the fingerprint test and both docs, if step 2 has not done so.
+5. Keep the private key out of the repository and delete the local copy after backing it up.
+
+Apps built with an older key cannot verify manifests signed with a newer one. The current key
+replaced one that never shipped.
 
 **Unsigned fallback.** The five `APPLE_*` secrets are required, or `sign-macos` fails and nothing
 publishes, unless the repository variable `ALLOW_UNSIGNED_FALLBACK` (optional) is `true`: then that

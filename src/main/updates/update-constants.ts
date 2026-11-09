@@ -1,5 +1,5 @@
-/** Base64 SPKI of the Ed25519 key that signs every release's `update.json`. */
-export const UPDATE_PUBLIC_KEY = 'MCowBQYDK2VwAyEAvYUUKMLRteR89Z9uiZUlSW+2mo6vEb/R6Eue+5ggvlI=';
+/** Base64 SPKI DER of Tajmator's own Ed25519 key that signs every release's `update.json`. */
+export const UPDATE_PUBLIC_KEY = 'MCowBQYDK2VwAyEAZmRgRtM65dYbvG2/nZsKNwMJI/pVfvV/9hEGaw25EJ4=';
 
 /** The GitHub repository releases are read from. */
 export const UPDATE_REPOSITORY = 'alwatroos/tajmator';

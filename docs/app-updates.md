@@ -46,3 +46,16 @@ or a path.
   `onUpdateStatusChanged` event (`IPC_CHANNELS` in `src/shared/ipc.ts`, DTOs in
   `src/shared/updates.ts`). The settings window shows release notes as plain text and links
   only `https:` URLs.
+
+## Update signing key
+
+The pinned `UPDATE_PUBLIC_KEY` is Tajmator's own Ed25519 key. It is not shared with
+agentic-workflow; only the Apple signing identity is shared.
+
+- **Fingerprint** (SHA-256 of the SPKI DER): `817f6cefe8091d654f0532576e10cea76b313974b9a41f82e5d7db4c04cdbd55`.
+- **Private key.** The secret `UPDATE_SIGNING_KEY` in the GitHub `release` environment, in PEM
+  PKCS8 format.
+- **Older key.** Apps built with the earlier key cannot verify manifests signed with this one.
+  No such app was ever released.
+
+Rotation steps are in [`releases.md`](releases.md#rotating-the-update-signing-key).
