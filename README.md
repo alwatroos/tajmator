@@ -7,7 +7,7 @@ or when disabled, it never touches the cursor.
 ## Requirements
 
 - macOS
-- Node.js as pinned in `.nvmrc` (24.x)
+- Node.js as pinned in `.nvmrc` (26.x)
 - corepack (ships with Node) for the pinned pnpm version
 
 ## Install and run

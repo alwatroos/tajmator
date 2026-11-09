@@ -30,6 +30,33 @@ function setup() {
 }
 
 describe('registerIpcHandlers', () => {
+  it('reports a save failure but still applies the settings', () => {
+    const handlers = new Map<string, (...a: unknown[]) => unknown>();
+    const engine = new Engine(
+      {
+        cursor: { getPosition: () => ({ x: 0, y: 0 }), moveTo: () => {} },
+        now: () => new Date(2026, 5, 1, 10, 0),
+        isAccessibilityGranted: () => true,
+        setInterval: () => 0,
+        clearInterval: () => {},
+      },
+      { ...DEFAULT_SETTINGS },
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    registerIpcHandlers({
+      ipcMain: { handle: (c, h) => void handlers.set(c, h as never) },
+      engine,
+      saveSettings: () => {
+        throw new Error('EROFS');
+      },
+      broadcast: vi.fn(),
+      openAccessibilitySettings: async () => {},
+    });
+    const r = handlers.get(IPC_CHANNELS.updateSettings)?.({}, { delayMinutes: 7 });
+    expect(r).toMatchObject({ ok: false, saveError: expect.any(String) });
+    expect(engine.getState().settings.delayMinutes).toBe(7);
+  });
+
   it('merges, validates, saves and applies a patch', () => {
     const { engine, saved, broadcast, call } = setup();
     const r = call(IPC_CHANNELS.updateSettings, { delayMinutes: 5 });

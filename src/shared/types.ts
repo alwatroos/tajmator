@@ -23,7 +23,7 @@ export type SettingsErrors = Partial<Record<keyof Settings, string>>;
 
 export type UpdateSettingsResult =
   | { ok: true; state: AppState }
-  | { ok: false; errors: SettingsErrors };
+  | { ok: false; errors: SettingsErrors; saveError?: string };
 
 export const STATUS_COLORS: Record<Status, string> = {
   active: '#22c55e',

@@ -13,6 +13,27 @@ export interface IpcDeps {
 }
 
 /**
+ * Persists settings and applies them to the engine, even when persisting fails,
+ * so they take effect for this session.
+ * @returns an error message when the settings could not be saved, otherwise undefined.
+ */
+export function persistAndApply(
+  engine: Engine,
+  saveSettings: (s: Settings) => void,
+  settings: Settings,
+): string | undefined {
+  let saveError: string | undefined;
+  try {
+    saveSettings(settings);
+  } catch (error) {
+    console.error('Could not save settings', error);
+    saveError = 'Could not save settings to disk. They apply until Tajmator quits.';
+  }
+  engine.applySettings(settings);
+  return saveError;
+}
+
+/**
  * Registers the renderer-facing IPC handlers and broadcasts engine state changes.
  * @returns a function that removes the engine subscription.
  */
@@ -25,12 +46,8 @@ export function registerIpcHandlers(deps: IpcDeps): () => void {
       typeof patch === 'object' && patch !== null && !Array.isArray(patch) ? patch : {};
     const result = validateSettings({ ...base, ...safePatch });
     if (!result.ok) return { ok: false, errors: result.errors };
-    try {
-      deps.saveSettings(result.settings);
-    } catch (error) {
-      console.error('Could not save settings', error);
-    }
-    engine.applySettings(result.settings);
+    const saveError = persistAndApply(engine, deps.saveSettings, result.settings);
+    if (saveError) return { ok: false, errors: {}, saveError };
     return { ok: true, state: engine.getState() };
   });
   ipcMain.handle(IPC_CHANNELS.openAccessibilitySettings, () => deps.openAccessibilitySettings());

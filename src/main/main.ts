@@ -5,7 +5,7 @@ import { IPC_CHANNELS } from '../shared/ipc.ts';
 import * as accessibility from './accessibility.ts';
 import { createRobotCursor } from './cursor.ts';
 import { type CursorDriver, Engine } from './engine.ts';
-import { registerIpcHandlers } from './ipc.ts';
+import { persistAndApply, registerIpcHandlers } from './ipc.ts';
 import { loadSettings, saveSettings } from './settings-store.ts';
 import { createTray } from './tray.ts';
 import { createSettingsWindow } from './window.ts';
@@ -47,12 +47,7 @@ function boot(): void {
     actions: {
       setEnabled: (enabled) => {
         const next = { ...engine.getState().settings, enabled };
-        try {
-          saveSettings(settingsFile, next);
-        } catch (error) {
-          console.error('Failed to save settings', error);
-        }
-        engine.applySettings(next);
+        persistAndApply(engine, (s) => saveSettings(settingsFile, s), next);
       },
       openWindow: () => win.show(),
       grantAccessibility: () => void accessibility.openSettings(),

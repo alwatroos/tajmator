@@ -76,6 +76,9 @@ export function SettingsForm() {
       <button type="submit" disabled={!validation.ok}>
         Save
       </button>
+      {saveResult && !saveResult.ok && saveResult.saveError && (
+        <span className="error">{saveResult.saveError}</span>
+      )}
       {saveResult?.ok && <span className="saved">Saved</span>}
     </form>
   );

@@ -2,7 +2,7 @@
 # minutes ago (2 days).
 minimumReleaseAge: 2880
 
-# Native/postinstall build scripts we explicitly trust (pnpm 11 `allowBuilds`).
+# Native/postinstall build scripts we explicitly trust (pnpm 12 `allowBuilds`).
 allowBuilds:
   "@jitsi/robotjs": true
   esbuild: true
