@@ -33,6 +33,19 @@ export function persistAndApply(
   return saveError;
 }
 
+export interface TrayToggleDeps {
+  engine: Engine;
+  saveSettings: (s: Settings) => void;
+  showError: (title: string, message: string) => void;
+}
+
+/** Applies the tray "Enabled" toggle; a failed save is shown to the user, settings still apply. */
+export function applyTrayToggle(deps: TrayToggleDeps, enabled: boolean): void {
+  const next = { ...deps.engine.getState().settings, enabled };
+  const saveError = persistAndApply(deps.engine, deps.saveSettings, next);
+  if (saveError) deps.showError('Settings not saved', saveError);
+}
+
 /**
  * Registers the renderer-facing IPC handlers and broadcasts engine state changes.
  * @returns a function that removes the engine subscription.
