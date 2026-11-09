@@ -1,16 +1,23 @@
 import { join } from 'node:path';
 import type { WebPreferences } from 'electron';
 import { app, BrowserWindow, shell } from 'electron';
+import { DOWNLOAD_ORIGIN, UPDATE_REPOSITORY } from './updates/update-constants.ts';
 
 /** Web preferences every window uses: isolated, no node, sandboxed. */
 export function secureWebPreferences(preload: string): WebPreferences {
   return { preload, contextIsolation: true, nodeIntegration: false, sandbox: true };
 }
 
-/** Whether a link may be handed to the system browser: https only. */
-function isHttpsUrl(url: string): boolean {
+/** Whether a link may be handed to the system browser: https://github.com/alwatroos/tajmator/… only. */
+export function isAllowedExternalUrl(url: string): boolean {
   try {
-    return new URL(url).protocol === 'https:';
+    const u = new URL(url);
+    return (
+      u.origin === DOWNLOAD_ORIGIN &&
+      u.username === '' &&
+      u.password === '' &&
+      u.pathname.startsWith(`/${UPDATE_REPOSITORY}/`)
+    );
   } catch {
     return false;
   }
@@ -45,7 +52,7 @@ export function createSettingsWindow(appRoot: string): SettingsWindow {
     });
     w.setMenuBarVisibility(false);
     w.webContents.setWindowOpenHandler(({ url }) => {
-      if (isHttpsUrl(url)) void shell.openExternal(url);
+      if (isAllowedExternalUrl(url)) void shell.openExternal(url);
       return { action: 'deny' };
     });
     w.webContents.on('will-navigate', (e) => e.preventDefault());

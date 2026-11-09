@@ -6,7 +6,7 @@ import type { InstallUpdateResult } from '../shared/updates.ts';
 import * as accessibility from './accessibility.ts';
 import { createRobotCursor } from './cursor.ts';
 import { type CursorDriver, Engine } from './engine.ts';
-import { persistAndApply, registerIpcHandlers } from './ipc.ts';
+import { applyTrayToggle, registerIpcHandlers } from './ipc.ts';
 import { loadSettings, saveSettings } from './settings-store.ts';
 import { createTray } from './tray.ts';
 import { bundleIdentity, cleanLeftovers, runningBundle } from './updates/bundle-swap.ts';
@@ -127,10 +127,15 @@ function boot(): void {
     getState: () => engine.getState(),
     onChange: (l) => engine.onChange(l),
     actions: {
-      setEnabled: (enabled) => {
-        const next = { ...engine.getState().settings, enabled };
-        persistAndApply(engine, (s) => saveSettings(settingsFile, s), next);
-      },
+      setEnabled: (enabled) =>
+        applyTrayToggle(
+          {
+            engine,
+            saveSettings: (s) => saveSettings(settingsFile, s),
+            showError: (title, message) => dialog.showErrorBox(title, message),
+          },
+          enabled,
+        ),
       openWindow: () => win.show(),
       grantAccessibility: () => void accessibility.openSettings(),
       quit: () => app.quit(),

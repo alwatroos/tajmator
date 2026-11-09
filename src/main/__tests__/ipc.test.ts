@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '../../shared/ipc.ts';
 import { DEFAULT_SETTINGS } from '../../shared/settings.ts';
 import { Engine } from '../engine.ts';
-import { registerIpcHandlers } from '../ipc.ts';
+import { applyTrayToggle, registerIpcHandlers } from '../ipc.ts';
 
 function setup() {
   const handlers = new Map<string, (...a: unknown[]) => unknown>();
@@ -76,5 +76,50 @@ describe('registerIpcHandlers', () => {
 
   it('returns state', () => {
     expect(setup().call(IPC_CHANNELS.getState)).toMatchObject({ status: 'active' });
+  });
+});
+
+describe('applyTrayToggle', () => {
+  const makeEngine = () =>
+    new Engine(
+      {
+        cursor: { getPosition: () => ({ x: 0, y: 0 }), moveTo: () => {} },
+        now: () => new Date(2026, 5, 1, 10, 0),
+        isAccessibilityGranted: () => true,
+        setInterval: () => 0,
+        clearInterval: () => {},
+      },
+      { ...DEFAULT_SETTINGS, enabled: true },
+    );
+
+  it('shows the error and still applies the setting when saving fails', () => {
+    const engine = makeEngine();
+    const showError = vi.fn();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    applyTrayToggle(
+      {
+        engine,
+        saveSettings: () => {
+          throw new Error('EROFS');
+        },
+        showError,
+      },
+      false,
+    );
+    expect(engine.getState().settings.enabled).toBe(false);
+    expect(showError).toHaveBeenCalledTimes(1);
+    expect(showError).toHaveBeenCalledWith(
+      'Settings not saved',
+      expect.stringContaining('Could not save settings to disk'),
+    );
+  });
+
+  it('saves without showing an error when saving succeeds', () => {
+    const engine = makeEngine();
+    const saved: unknown[] = [];
+    const showError = vi.fn();
+    applyTrayToggle({ engine, saveSettings: (s) => saved.push(s), showError }, false);
+    expect(saved).toEqual([{ ...DEFAULT_SETTINGS, enabled: false }]);
+    expect(showError).not.toHaveBeenCalled();
   });
 });

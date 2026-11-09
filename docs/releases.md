@@ -95,6 +95,33 @@ publishes, unless the repository variable `ALLOW_UNSIGNED_FALLBACK` (optional) i
 architecture ships unsigned (ad-hoc) with a warning, and the release notes tell users how to open
 `/Applications/Tajmator.app` past Gatekeeper.
 
+## Entitlements
+
+`signing/entitlements.mac.plist` grants `allow-jit` and `allow-unsigned-executable-memory`
+(Electron/V8) and `disable-library-validation`. The last one stays until a signed build proves it
+is unnecessary. The app loads the native `@jitsi/robotjs` `.node` from
+`Contents/Resources/app.asar.unpacked/node_modules/@jitsi/robotjs`. That package ships prebuilt
+binaries from another team, and no release step checks that every packaged `.node` carries
+Tajmator's Team ID (`check-native-arch.sh` checks the architecture only, and `verify-macos-app.sh`
+checks the bundle signature only). With library validation on, a `.node` signed by another team, or
+left unsigned, fails to load, and the app shows "Cursor control unavailable".
+
+**Test that settles it** (signed and notarised build, both architectures):
+
+1. `TAJMATOR_SIGN=1 pnpm package` (and `TAJMATOR_ARCH=x64`). In `release/mac*/Tajmator.app`, run
+   `codesign -dv --verbose=4 <file> 2>&1 | grep TeamIdentifier` for `Contents/MacOS/Tajmator` and every
+   file from `find Contents/Resources/app.asar.unpacked -name '*.node' -o -name '*.dylib'`. All must
+   print the same TeamIdentifier, and none may print `not set` or `adhoc`.
+2. Remove the `disable-library-validation` key, package and notarise again, and confirm with
+   `codesign -d --entitlements - Tajmator.app` that it is gone.
+3. Install from the `.dmg` on a clean Mac of each architecture and launch. There must be no "Cursor
+   control unavailable" dialog, the cursor must move once Accessibility is granted, and
+   `log show --last 5m --predicate 'process == "Tajmator"' | grep -i "library validation\|different Team IDs"`
+   must be empty.
+
+Only when 1 to 3 pass on both architectures, remove the key in a pull request that also adds the
+TeamIdentifier check from step 1 to `sign-desktop.sh`.
+
 ## Local packaging
 
 `pnpm package` produces an unsigned `.dmg` and `.zip` in `release/` (`TAJMATOR_ARCH=x64` for Intel).
