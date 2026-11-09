@@ -13,6 +13,8 @@ or a path.
   anonymously (the repository is public; there is no token and no feed override). Drafts,
   prereleases and non-semver tags are ignored; the highest version wins. If the repository
   were private, a check would end in `failed`.
+- **Current version.** `app.getVersion()` comes from `package.json`, which release builds stamp from
+  the tag (see [`releases.md`](releases.md)). Unreleased builds report the placeholder `0.0.0`.
 - **Schedule.** The first check runs 10 s after start, then one every 6 h after the previous
   one finished, plus "Check for Updates" in the tray and the settings window. A failure
   surfaces as `phase: failed` and never blocks startup.

@@ -14,18 +14,22 @@ Actions -> **Tag release** -> Run workflow on `main`, pick `bump` (`patch` by de
 `major`), or type an exact `version` (no `v`, for example `1.0.0` or `1.1.0-rc.1`). The workflow:
 
 1. runs Biome (warnings are errors), typecheck and tests on the head of `main`,
-2. bumps `package.json`, commits `chore(release): vX.Y.Z` to `main` and pushes the tag `vX.Y.Z`
-   (refusing an existing tag),
+2. computes the version from the highest stable `v*` tag (or takes the exact `version`) and pushes only
+   the tag `vX.Y.Z`, refusing an existing tag. It never commits to `main`, which the `main` ruleset
+   protects,
 3. dispatches `release.yml` on the tag (a push made with `GITHUB_TOKEN` does not trigger `push:
    tags`), which builds both architectures, signs and notarises macOS, signs `update.json` and
    creates the GitHub Release.
 
 CLI equivalent: `gh workflow run tag-release.yml --ref main -f bump=patch`.
 
-**First release (`1.0.0`).** `package.json` already holds `1.0.0`. Run Tag release with `version` =
-`1.0.0`: because it equals the current version, the workflow skips the bump and the commit (npm
-refuses an unchanged version), then tags the head of `main` as `v1.0.0` and dispatches
-`release.yml`. Any other version, or a bump, commits `chore(release): vX.Y.Z` first.
+**Version source.** `main` holds the placeholder version `0.0.0` in `package.json`. It is never
+released and is lower than any release, so the updater never treats a dev build as newer.
+`release.yml` stamps the tag version into `package.json` in the build workspace
+(`.github/scripts/stamp-version.sh`), so the app, the artifact names and `update.json` carry the real
+version. A local `pnpm package` yields `Tajmator-0.0.0-*`. A bump starts from the highest stable `v*`
+tag; with no tags, a patch gives `0.0.1`. Bumps ignore prerelease tags. The version logic is in
+`.github/scripts/next-version.sh`, tested by `next-version-test.sh` and `stamp-version-test.sh`.
 
 ## The release workflow
 
@@ -33,16 +37,18 @@ refuses an unchanged version), then tags the head of `main` as `v1.0.0` and disp
 touching release files (`.github/workflows/release.yml`, `.github/scripts/**`,
 `electron-builder.yml`, `scripts/package.mjs`, `scripts/after-pack.cjs`, `signing/**`). It
 publishes only for a ref starting with `refs/tags/v`; everything else is a dry run (artifacts kept
-7 days). A `-` in the tag marks a prerelease; `mode` checks that the tag equals the `package.json`
-version.
+7 days). A `-` in the tag marks a prerelease; on a publishing run `mode` outputs the tag's version and
+fails unless `package.json` holds `0.0.0` (or already equals the tag version, so a re-dispatch on an
+older tag still works).
 
 **Jobs.**
 
-- `mode`: script tests (`sh .github/scripts/update-manifest-test.sh`) and the tag check.
-- `build`: matrix `arm64` / `x64` on `macos-15` (x64 is cross-built), runs `pnpm package` with
+- `mode`: script tests (`update-manifest-test.sh`, `next-version-test.sh`,
+  `stamp-version-test.sh` in `.github/scripts/`) and the version check above.
+- `build`: matrix `arm64` / `x64` on `macos-15` (x64 is cross-built), stamps the version, runs `pnpm package` with
   `TAJMATOR_ARCH`, then `.github/scripts/check-native-arch.sh` (`lipo -archs`) on the app binary
   and the robotjs `.node` files. Uploads `desktop-<arch>` (`.dmg` and `.zip`).
-- `sign-macos` (tag runs; environment `release`): `.github/scripts/sign-desktop.sh <arch> <dir>`
+- `sign-macos` (tag runs; environment `release`): stamps the version, then `.github/scripts/sign-desktop.sh <arch> <dir>`
   rebuilds with `TAJMATOR_SIGN=1` (electron-builder signs and notarises), then
   `check-native-arch.sh` and `verify-macos-app.sh` run on the result, which replaces the unsigned
   artifacts.
@@ -131,5 +137,4 @@ TeamIdentifier check from step 1 to `sign-desktop.sh`.
 ## Dry run and removal
 
 `gh workflow run release.yml --ref <branch>` builds unsigned and uploads artifacts only. A bad
-release goes with `gh release delete <tag> --cleanup-tag` (the `chore(release)` commit stays on
-`main`).
+release goes with `gh release delete <tag> --cleanup-tag`.
