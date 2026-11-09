@@ -2,9 +2,39 @@
   "name": "tajmator",
   "author": "alwatroos",
   "version": "1.0.0",
-  "main": "index.js",
+  "private": true,
+  "type": "module",
+  "description": "macOS menu bar app that keeps the mouse moving during working hours.",
+  "main": "dist/main/main.js",
   "license": "MIT",
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=26.13.0 <27"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "icons": "node scripts/generate-icons.mjs",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "test": "vitest run",
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run test"
+  },
   "dependencies": {
-    "robotjs": "^0.6.0"
+    "@jitsi/robotjs": "0.6.24",
+    "jotai": "3.0.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.6",
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "electron": "45.2.3",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
   }
 }

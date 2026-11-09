@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Tajmator</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1e40af"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
+  <circle cx="512" cy="512" r="360" fill="#ffffff"/>
+  <circle cx="512" cy="512" r="360" fill="none" stroke="#1e3a8a" stroke-width="44"/>
+  <g stroke="#1e3a8a" stroke-width="40" stroke-linecap="round">
+    <line x1="512" y1="210" x2="512" y2="262"/>
+    <line x1="814" y1="512" x2="762" y2="512"/>
+    <line x1="512" y1="814" x2="512" y2="762"/>
+    <line x1="210" y1="512" x2="262" y2="512"/>
+  </g>
+  <g stroke="#1e3a8a" stroke-width="44" stroke-linecap="round" fill="none">
+    <line x1="512" y1="512" x2="512" y2="330"/>
+    <line x1="512" y1="512" x2="400" y2="580"/>
+  </g>
+  <path d="M520 470 L520 800 L600 722 L662 850 L726 820 L664 694 L774 686 Z"
+        fill="#22c55e" stroke="#ffffff" stroke-width="30" stroke-linejoin="round"/>
+</svg>
