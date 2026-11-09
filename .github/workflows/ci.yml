@@ -1,0 +1,45 @@
+name: CI
+
+# Runs on every pull request targeting main and on every push to main.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      # No `cache: pnpm` here: pnpm is not on PATH until corepack is enabled.
+      - name: Set up Node from .nvmrc
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Enable corepack (pnpm from packageManager)
+        run: corepack enable
+
+      - name: Show pnpm version
+        run: pnpm --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Biome (warnings are errors)
+        run: pnpm exec biome check --error-on-warnings .
+
+      - name: Biome, tsc and vitest
+        run: pnpm check

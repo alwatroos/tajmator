@@ -1,0 +1,65 @@
+:root {
+  color-scheme: light dark;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 14px;
+}
+body {
+  margin: 0;
+  padding: 20px;
+}
+h1 {
+  font-size: 18px;
+  margin: 0 0 16px;
+}
+main > div {
+  margin-bottom: 16px;
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--status-color);
+}
+.status-label {
+  font-weight: 600;
+}
+.status-detail {
+  opacity: 0.7;
+  font-size: 12px;
+}
+.banner {
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.banner p {
+  margin: 0 0 8px;
+}
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings label.toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.error {
+  color: #ef4444;
+  font-size: 12px;
+}
+.saved {
+  color: #22c55e;
+  font-size: 12px;
+}

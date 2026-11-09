@@ -1,0 +1,10 @@
+# Supply-chain guard: refuse dependency versions published less than this many
+# minutes ago (2 days).
+minimumReleaseAge: 2880
+
+# Native/postinstall build scripts we explicitly trust (pnpm 11 `allowBuilds`).
+allowBuilds:
+  "@jitsi/robotjs": true
+  esbuild: true
+  # electron: false, its binary comes from scripts/ensure-electron.mjs.
+  electron: false
