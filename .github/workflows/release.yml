@@ -1,0 +1,442 @@
+name: Release
+
+# Tajmator release pipeline. A `v*` tag publishes a GitHub release with the signed and notarised macOS app.
+#
+# - Pull request touching a release file: runs the script tests and the unsigned build matrix, publishes nothing.
+# - workflow_dispatch on a branch: the same dry run, never publishes. It needs this file on the default branch.
+# - Tag `vX.Y.Z` (a tag push, or a workflow_dispatch on the tag ref): the full run, then `publish` creates the release.
+#   A workflow_dispatch on a refs/tags/v* ref publishes like a tag push. "Tag release" pushes the tag with
+#   GITHUB_TOKEN, which does not trigger the tag push, so it dispatches this workflow on the tag instead. The tag is
+#   derived from GITHUB_REF in the `mode` job and checked against the package.json version.
+# - `sign-macos` runs on tag runs only, in the environment `release`. It rebuilds each architecture with electron-builder
+#   signing and notarisation enabled and replaces the unsigned `desktop-<arch>` artifacts (on success only). With the APPLE_* secrets
+#   missing the job fails, unless the repository variable ALLOW_UNSIGNED_FALLBACK is `true`, which ships that
+#   architecture unsigned with a warning.
+# - `manifest` (tag runs only, environment `release`) signs `update.json` (name, size, sha256 of every final artifact) with
+#   the optional secret UPDATE_SIGNING_KEY; `publish` attaches it. Without the key the release carries no manifest.
+#   `manifest-dry-run` (every other run) does the same with a TEST ONLY key generated in the job and publishes nothing.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - ".github/scripts/**"
+      - "electron-builder.yml"
+      - "scripts/package.mjs"
+      - "scripts/after-pack.cjs"
+      - "signing/**"
+  workflow_dispatch:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+
+# Cancel superseded runs on pull requests only; a branch dispatch run completes (own group per run).
+# A run on a tag ref (push or dispatch) shares one group per tag, so two runs on the same tag never overlap.
+concurrency:
+  group: release-${{ (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')) && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  mode:
+    name: Mode and script tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      publishing: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v') }}
+      tag: ${{ steps.tag.outputs.tag }}
+    env:
+      PUBLISHING: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v') }}
+      REF_NAME: ${{ github.ref_name }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Script tests
+        run: |
+          sh .github/scripts/update-manifest-test.sh
+
+      # Publishing runs only: the tag must be a semver tag and equal the package.json version.
+      - name: Check the tag matches the versions
+        id: tag
+        if: env.PUBLISHING == 'true'
+        run: |
+          tag="$REF_NAME"
+          if ! printf '%s\n' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::Tag $tag is not vX.Y.Z[-prerelease]"
+            exit 1
+          fi
+          version="$(jq -r .version package.json)"
+          if [ "${tag#v}" != "$version" ]; then
+            echo "::error::Tag $tag does not match package.json version $version"
+            exit 1
+          fi
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.arch }}
+    needs: mode
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          # Intel app cross-built on the arm64 runner (verified locally: every
+          # native module reports x86_64). `macos-15-intel` is the fallback label.
+          - arch: x64
+            runner: macos-15
+    env:
+      # package.mjs defaults to arm64 when this is unset.
+      TAJMATOR_ARCH: ${{ matrix.arch }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # No `cache: pnpm` here: pnpm is not on PATH until corepack is enabled.
+      - name: Set up Node from .nvmrc
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Enable corepack (pnpm from packageManager)
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Package the unsigned app
+        run: pnpm package
+
+      - name: Check native module architecture
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: sh .github/scripts/check-native-arch.sh release "$ARCH"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ matrix.arch }}
+          path: |
+            release/*.dmg
+            release/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  # Signs and notarises both architectures. The only job that reads the APPLE_* secrets, and it runs on a `v*` tag run
+  # only, in the environment `release` (deployment rule: tags `v*`). With the secrets missing it fails (fail closed);
+  # only the repository variable ALLOW_UNSIGNED_FALLBACK == 'true' turns that, and a failed signing, into
+  # warn-and-ship-that-architecture-unsigned.
+  sign-macos:
+    name: Sign macOS
+    needs: [mode, build]
+    if: needs.mode.outputs.publishing == 'true'
+    runs-on: macos-15
+    timeout-minutes: 90
+    environment: release
+    permissions:
+      contents: read
+    outputs:
+      unsigned: ${{ steps.result.outputs.unsigned }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node from .nvmrc
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Enable corepack (pnpm from packageManager)
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Only whether the secrets exist is exposed to this step, never their values.
+      - name: Check the Apple secrets
+        id: secrets
+        env:
+          HAVE_ALL: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.APPLE_API_KEY_P8_BASE64 != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER_ID != '' }}
+          ALLOW: ${{ vars.ALLOW_UNSIGNED_FALLBACK }}
+        run: |
+          if [ "$HAVE_ALL" = "true" ]; then
+            echo "sign=true" >>"$GITHUB_OUTPUT"
+          elif [ "$ALLOW" = "true" ]; then
+            echo "::warning title=Unsigned macOS build::an APPLE_* secret is missing; ALLOW_UNSIGNED_FALLBACK=true, so the macOS builds ship unsigned"
+            echo "sign=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "::error title=Missing Apple secrets::APPLE_CERTIFICATE_P12_BASE64, APPLE_CERTIFICATE_PASSWORD, APPLE_API_KEY_P8_BASE64, APPLE_API_KEY_ID and APPLE_API_ISSUER_ID must all be set in the release environment"
+            exit 1
+          fi
+
+      - name: Sign and notarise (arm64)
+        id: sign-arm64
+        if: steps.secrets.outputs.sign == 'true'
+        continue-on-error: ${{ vars.ALLOW_UNSIGNED_FALLBACK == 'true' }}
+        env:
+          CSC_LINK: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: sh .github/scripts/sign-desktop.sh arm64 "$RUNNER_TEMP/signed/arm64"
+
+      - name: Upload the signed arm64 build
+        if: steps.sign-arm64.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-arm64
+          path: ${{ runner.temp }}/signed/arm64/*
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Sign and notarise (x64)
+        id: sign-x64
+        if: steps.secrets.outputs.sign == 'true'
+        continue-on-error: ${{ vars.ALLOW_UNSIGNED_FALLBACK == 'true' }}
+        env:
+          CSC_LINK: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: sh .github/scripts/sign-desktop.sh x64 "$RUNNER_TEMP/signed/x64"
+
+      - name: Upload the signed x64 build
+        if: steps.sign-x64.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-x64
+          path: ${{ runner.temp }}/signed/x64/*
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Collect the unsigned architectures
+        id: result
+        if: always()
+        env:
+          ARM64: ${{ steps.sign-arm64.outcome }}
+          X64: ${{ steps.sign-x64.outcome }}
+        run: |
+          unsigned=""
+          [ "$ARM64" = "success" ] || unsigned="arm64"
+          [ "$X64" = "success" ] || unsigned="${unsigned:+$unsigned }x64"
+          for arch in $unsigned; do
+            echo "::warning title=macOS build is unsigned::$arch ships unsigned"
+          done
+          echo "unsigned=$unsigned" >>"$GITHUB_OUTPUT"
+
+  # Update manifest dry run: pull requests and branch dispatch. No environment, no secret: it signs with a TEST ONLY key
+  # generated inside the job. The result is an Actions artifact named TEST-ONLY and is never a release asset.
+  manifest-dry-run:
+    name: Update manifest (dry run)
+    needs: [mode, build]
+    if: >-
+      always() && needs.mode.outputs.publishing != 'true'
+      && needs.mode.result == 'success' && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node from .nvmrc
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Download the build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: desktop-*
+          path: ${{ runner.temp }}/dist
+          merge-multiple: true
+
+      - name: Test-sign and verify the manifest
+        run: |
+          umask 077
+          key="$RUNNER_TEMP/test-signing-key"
+          trap 'rm -f "$key"' EXIT
+          node --input-type=module -e "
+          import { generateKeyPairSync } from 'node:crypto';
+          process.stdout.write(generateKeyPairSync('ed25519').privateKey.export({ format: 'pem', type: 'pkcs8' }));
+          " > "$key"
+          out="$RUNNER_TEMP/update-manifest-test"
+          mkdir -p "$out"
+          version="$(jq -r .version package.json)"
+          node .github/scripts/update-manifest.mjs sign --tag "v$version" --artifacts "$RUNNER_TEMP/dist" \
+            --published "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --key-file "$key" --out "$out/update.TEST-ONLY.json"
+          node .github/scripts/update-manifest.mjs verify "$out/update.TEST-ONLY.json" --artifacts "$RUNNER_TEMP/dist"
+          echo "::notice title=Update manifest (dry run)::signed with a TEST ONLY key generated in this job; not a release asset"
+
+      - name: Upload the TEST ONLY manifest
+        uses: actions/upload-artifact@v7
+        with:
+          name: update-manifest-TEST-ONLY
+          path: ${{ runner.temp }}/update-manifest-test/update.TEST-ONLY.json
+          if-no-files-found: error
+          retention-days: 7
+
+  # Signs update.json on a `v*` tag run only, in the environment `release` (deployment rule: tags `v*`), after
+  # sign-macos so it covers the final artifacts. The only job that reads UPDATE_SIGNING_KEY, and only in the signing
+  # step. Without the secret the release simply carries no manifest.
+  manifest:
+    name: Update manifest
+    needs: [mode, build, sign-macos]
+    if: >-
+      always() && needs.mode.outputs.publishing == 'true'
+      && needs.mode.result == 'success' && needs.build.result == 'success' && needs.sign-macos.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: read
+    outputs:
+      signed: ${{ steps.done.outputs.signed }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node from .nvmrc
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Download the final artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: desktop-*
+          path: ${{ runner.temp }}/dist
+          merge-multiple: true
+
+      # Only whether the secret exists is exposed to this step, never its value.
+      - name: Check the update signing key
+        id: secret
+        env:
+          HAVE_KEY: ${{ secrets.UPDATE_SIGNING_KEY != '' }}
+        run: |
+          if [ "$HAVE_KEY" = "true" ]; then
+            echo "present=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "present=false" >>"$GITHUB_OUTPUT"
+            echo "::notice title=Update manifest::no UPDATE_SIGNING_KEY; the release carries no update manifest"
+          fi
+
+      - name: Sign the manifest
+        id: sign
+        if: steps.secret.outputs.present == 'true'
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          TAG: ${{ needs.mode.outputs.tag }}
+        run: |
+          umask 077
+          key="$RUNNER_TEMP/update-signing-key"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$UPDATE_SIGNING_KEY" > "$key"
+          unset UPDATE_SIGNING_KEY
+          out="$RUNNER_TEMP/update-manifest"
+          mkdir -p "$out"
+          node .github/scripts/update-manifest.mjs sign --tag "$TAG" --artifacts "$RUNNER_TEMP/dist" \
+            --published "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --key-file "$key" --out "$out/update.json"
+
+      - name: Verify the signed manifest
+        if: steps.secret.outputs.present == 'true'
+        run: node .github/scripts/update-manifest.mjs verify "$RUNNER_TEMP/update-manifest/update.json" --artifacts "$RUNNER_TEMP/dist"
+
+      - name: Upload the signed manifest
+        if: steps.secret.outputs.present == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: update-manifest
+          path: ${{ runner.temp }}/update-manifest/update.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Report
+        id: done
+        env:
+          PRESENT: ${{ steps.secret.outputs.present }}
+        run: echo "signed=$PRESENT" >>"$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish release
+    needs: [mode, build, sign-macos, manifest]
+    if: >-
+      always() && needs.mode.outputs.publishing == 'true'
+      && needs.mode.result == 'success' && needs.build.result == 'success' && needs.sign-macos.result == 'success'
+      && needs.manifest.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: desktop-*
+          path: release-assets
+          merge-multiple: true
+
+      # The signed manifest is part of the release from the moment it is created.
+      - name: Download the signed update manifest
+        if: needs.manifest.outputs.signed == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: update-manifest
+          path: release-assets
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.mode.outputs.tag }}
+          UNSIGNED: ${{ needs.sign-macos.outputs.unsigned }}
+          MANIFEST_SIGNED: ${{ needs.manifest.outputs.signed }}
+        run: |
+          cat >notes.md <<NOTES
+          Tajmator macOS app: download the \`.dmg\` for your Mac (\`-arm64.dmg\` for Apple silicon,
+          the plain \`.dmg\` for Intel). The \`.zip\` files feed the in-app updater.
+
+          NOTES
+          if [ -n "$UNSIGNED" ]; then
+            cat >>notes.md <<NOTES
+          **The ${UNSIGNED} build(s) are unsigned.** After installing, macOS Gatekeeper may refuse to
+          open the app. Right-click the app and choose Open, or run
+          \`xattr -dr com.apple.quarantine "/Applications/Tajmator.app"\`.
+
+          ---
+
+          NOTES
+          fi
+          prerelease=""
+          case "$TAG" in *-*) prerelease="--prerelease" ;; esac
+          assets="release-assets/*.dmg release-assets/*.zip"
+          if [ "$MANIFEST_SIGNED" = "true" ]; then assets="$assets release-assets/update.json"; fi
+          # shellcheck disable=SC2086
+          gh release create "$TAG" $assets \
+            --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "Tajmator $TAG" --generate-notes --notes-file notes.md $prerelease
+
+      - name: Check the update manifest is a release asset
+        if: needs.manifest.outputs.signed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.mode.outputs.tag }}
+        run: gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -qx update.json

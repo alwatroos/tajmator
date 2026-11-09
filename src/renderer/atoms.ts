@@ -1,5 +1,6 @@
 import { atom } from 'jotai';
 import type { AppState, Settings, UpdateSettingsResult } from '../shared/types.ts';
+import type { UpdateStatus } from '../shared/updates.ts';
 
 /** Latest state pushed from the main process, null until the first load. */
 export const appStateAtom = atom<AppState | null>(null);
@@ -9,3 +10,6 @@ export const draftAtom = atom<Partial<Settings> | null>(null);
 
 /** Outcome of the last save attempt; null before any save or after an edit. */
 export const saveResultAtom = atom<UpdateSettingsResult | null>(null);
+
+/** Latest update status pushed from the main process, null until the first load. */
+export const updateStatusAtom = atom<UpdateStatus | null>(null);

@@ -1,10 +1,19 @@
 import { join } from 'node:path';
 import type { WebPreferences } from 'electron';
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, shell } from 'electron';
 
 /** Web preferences every window uses: isolated, no node, sandboxed. */
 export function secureWebPreferences(preload: string): WebPreferences {
   return { preload, contextIsolation: true, nodeIntegration: false, sandbox: true };
+}
+
+/** Whether a link may be handed to the system browser: https only. */
+function isHttpsUrl(url: string): boolean {
+  try {
+    return new URL(url).protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 export interface SettingsWindow {
@@ -35,7 +44,10 @@ export function createSettingsWindow(appRoot: string): SettingsWindow {
       webPreferences: secureWebPreferences(join(appRoot, 'dist', 'preload', 'preload.cjs')),
     });
     w.setMenuBarVisibility(false);
-    w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    w.webContents.setWindowOpenHandler(({ url }) => {
+      if (isHttpsUrl(url)) void shell.openExternal(url);
+      return { action: 'deny' };
+    });
     w.webContents.on('will-navigate', (e) => e.preventDefault());
     w.on('close', (e) => {
       if (quitting) return;

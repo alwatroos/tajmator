@@ -2,12 +2,14 @@ import type { ReactNode } from 'react';
 import { PermissionBanner } from './components/PermissionBanner.tsx';
 import { SettingsForm } from './components/SettingsForm.tsx';
 import { StatusBadge } from './components/StatusBadge.tsx';
+import { UpdatesSection } from './components/UpdatesSection.tsx';
 
 /** Window sections in display order. Add new sections here. */
 const SECTIONS: { id: string; element: ReactNode }[] = [
   { id: 'status', element: <StatusBadge /> },
   { id: 'permission', element: <PermissionBanner /> },
   { id: 'settings', element: <SettingsForm /> },
+  { id: 'updates', element: <UpdatesSection /> },
 ];
 
 /** Settings window root. */
