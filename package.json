@@ -1,7 +1,7 @@
 {
   "name": "tajmator",
   "author": "alwatroos",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
   "description": "macOS menu bar app that keeps the mouse moving during working hours.",

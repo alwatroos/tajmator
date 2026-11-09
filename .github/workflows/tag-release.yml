@@ -1,15 +1,14 @@
 name: Tag release
 
 # One-click release. The owner runs Actions -> Tag release on `main` and picks the bump (patch by default).
-# This workflow checks the head of main (lint, typecheck, tests), bumps the version in package.json,
-# commits "chore(release): vX.Y.Z" to main, pushes the tag `vX.Y.Z` and dispatches
-# `release.yml` on that tag, which builds, signs and notarises macOS, signs update.json and publishes the GitHub Release.
+# This workflow checks the head of main (lint, typecheck, tests), computes the next version from the highest stable
+# `v*` tag (or takes the exact `version` input) and pushes only the tag `vX.Y.Z`. It never commits to `main`, which
+# the `main` ruleset protects. It then dispatches `release.yml` on the tag, which stamps the version into
+# package.json in its build workspace, builds, signs and notarises macOS, signs update.json and publishes the
+# GitHub Release. `main` keeps the placeholder version 0.0.0 (see docs/releases.md).
 #
 # A push made with GITHUB_TOKEN does not start the `push: tags` trigger of release.yml (GitHub blocks recursive
 # triggers), so the tag run is started with a dispatch on the tag ref instead.
-#
-# First release: package.json already holds 1.0.0. Running this with `version` = 1.0.0 skips the bump and the commit
-# (npm version rejects an unchanged version) and still tags the head of main and dispatches release.yml.
 #
 # Every input reaches a script through `env:` only; no expression is interpolated into a `run:` script.
 on:
@@ -63,59 +62,36 @@ jobs:
           pnpm typecheck
           pnpm test
 
-      - name: Bump version
-        id: bump
+      - name: Compute version
+        id: version
         shell: bash
         env:
           BUMP: ${{ inputs.bump }}
           VERSION: ${{ inputs.version }}
         run: |
-          current=$(jq -r .version package.json)
-          if [ -n "$VERSION" ]; then
-            printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' ||
-              { echo "::error title=Version::'$VERSION' is not X.Y.Z[-pre]"; exit 1; }
-            target=$VERSION
-          else
-            target=$BUMP
-          fi
-          if [ -n "$VERSION" ] && [ "$VERSION" = "$current" ]; then
-            version=$current
-            bumped=false
-          else
-            version=$(npm version "$target" --no-git-tag-version | sed 's/^v//')
-            bumped=true
-          fi
-          tag="v$version"
-          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-            echo "::error title=Version::the tag $tag already exists"
-            exit 1
-          fi
-          echo "tag=$tag" >>"$GITHUB_OUTPUT"
-          echo "bumped=$bumped" >>"$GITHUB_OUTPUT"
+          sh .github/scripts/next-version-test.sh
+          version=$(git tag -l 'v*' | sh .github/scripts/next-version.sh "$BUMP" "$VERSION")
+          echo "tag=v$version" >>"$GITHUB_OUTPUT"
 
-      - name: Commit, tag and push
+      - name: Tag and push
         shell: bash
         env:
-          TAG: ${{ steps.bump.outputs.tag }}
-          BUMPED: ${{ steps.bump.outputs.bumped }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [ "$BUMPED" = "true" ]; then
-            git add package.json
-            git commit -m "chore(release): $TAG"
-          fi
           git tag "$TAG"
-          git push --atomic origin HEAD:main "refs/tags/$TAG"
+          git push origin "refs/tags/$TAG"
 
       - name: Dispatch Release
         shell: bash
         env:
-          TAG: ${{ steps.bump.outputs.tag }}
+          TAG: ${{ steps.version.outputs.tag }}
           GH_TOKEN: ${{ github.token }}
         run: |
           gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
           {
             echo "## Tag release $TAG"
+            echo "Commit: $(git rev-parse "$TAG^{commit}")"
             echo "Release run: https://github.com/$GITHUB_REPOSITORY/actions/workflows/release.yml"
           } >>"$GITHUB_STEP_SUMMARY"

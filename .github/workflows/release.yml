@@ -7,7 +7,8 @@ name: Release
 # - Tag `vX.Y.Z` (a tag push, or a workflow_dispatch on the tag ref): the full run, then `publish` creates the release.
 #   A workflow_dispatch on a refs/tags/v* ref publishes like a tag push. "Tag release" pushes the tag with
 #   GITHUB_TOKEN, which does not trigger the tag push, so it dispatches this workflow on the tag instead. The tag is
-#   derived from GITHUB_REF in the `mode` job and checked against the package.json version.
+#   derived from GITHUB_REF in the `mode` job; the version comes from the tag, and `main` keeps the placeholder 0.0.0 in package.json.
+#   `build` and `sign-macos` stamp that version into package.json in their workspace before packaging (stamp-version.sh).
 # - `sign-macos` runs on tag runs only, in the environment `release`. It rebuilds each architecture with electron-builder
 #   signing and notarisation enabled and replaces the unsigned `desktop-<arch>` artifacts (on success only). With the APPLE_* secrets
 #   missing the job fails, unless the repository variable ALLOW_UNSIGNED_FALLBACK is `true`, which ships that
@@ -46,6 +47,7 @@ jobs:
     outputs:
       publishing: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v') }}
       tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
     env:
       PUBLISHING: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v') }}
       REF_NAME: ${{ github.ref_name }}
@@ -58,23 +60,31 @@ jobs:
       - name: Script tests
         run: |
           sh .github/scripts/update-manifest-test.sh
+          sh .github/scripts/next-version-test.sh
+          sh .github/scripts/stamp-version-test.sh
 
-      # Publishing runs only: the tag must be a semver tag and equal the package.json version.
-      - name: Check the tag matches the versions
+      # Publishing runs: the tag must be a semver tag; the version is the tag's. package.json must hold the 0.0.0
+      # placeholder, or already equal the tag (a re-dispatch on a tag made before the placeholder).
+      # Other runs: the version is the package.json one (the placeholder).
+      - name: Resolve the version
         id: tag
-        if: env.PUBLISHING == 'true'
         run: |
-          tag="$REF_NAME"
-          if ! printf '%s\n' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
-            echo "::error::Tag $tag is not vX.Y.Z[-prerelease]"
-            exit 1
+          current="$(jq -r .version package.json)"
+          if [ "$PUBLISHING" = "true" ]; then
+            tag="$REF_NAME"
+            if ! printf '%s\n' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+              echo "::error::Tag $tag is not vX.Y.Z[-prerelease]"
+              exit 1
+            fi
+            if [ "$current" != "0.0.0" ] && [ "$current" != "${tag#v}" ]; then
+              echo "::error::package.json holds $current; main must keep the 0.0.0 placeholder (the version comes from the tag)"
+              exit 1
+            fi
+            echo "tag=$tag" >>"$GITHUB_OUTPUT"
+            echo "version=${tag#v}" >>"$GITHUB_OUTPUT"
+          else
+            echo "version=$current" >>"$GITHUB_OUTPUT"
           fi
-          version="$(jq -r .version package.json)"
-          if [ "${tag#v}" != "$version" ]; then
-            echo "::error::Tag $tag does not match package.json version $version"
-            exit 1
-          fi
-          echo "tag=$tag" >>"$GITHUB_OUTPUT"
 
   build:
     name: Build ${{ matrix.arch }}
@@ -111,6 +121,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Stamp the version
+        env:
+          VERSION: ${{ needs.mode.outputs.version }}
+        run: sh .github/scripts/stamp-version.sh "$VERSION"
 
       - name: Package the unsigned app
         run: pnpm package
@@ -178,6 +193,11 @@ jobs:
             echo "::error title=Missing Apple secrets::APPLE_CERTIFICATE_P12_BASE64, APPLE_CERTIFICATE_PASSWORD, APPLE_API_KEY_P8_BASE64, APPLE_API_KEY_ID and APPLE_API_ISSUER_ID must all be set in the release environment"
             exit 1
           fi
+
+      - name: Stamp the version
+        env:
+          VERSION: ${{ needs.mode.outputs.version }}
+        run: sh .github/scripts/stamp-version.sh "$VERSION"
 
       - name: Sign and notarise (arm64)
         id: sign-arm64
@@ -269,6 +289,8 @@ jobs:
           merge-multiple: true
 
       - name: Test-sign and verify the manifest
+        env:
+          VERSION: ${{ needs.mode.outputs.version }}
         run: |
           umask 077
           key="$RUNNER_TEMP/test-signing-key"
@@ -279,8 +301,7 @@ jobs:
           " > "$key"
           out="$RUNNER_TEMP/update-manifest-test"
           mkdir -p "$out"
-          version="$(jq -r .version package.json)"
-          node .github/scripts/update-manifest.mjs sign --tag "v$version" --artifacts "$RUNNER_TEMP/dist" \
+          node .github/scripts/update-manifest.mjs sign --tag "v$VERSION" --artifacts "$RUNNER_TEMP/dist" \
             --published "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --key-file "$key" --out "$out/update.TEST-ONLY.json"
           node .github/scripts/update-manifest.mjs verify "$out/update.TEST-ONLY.json" --artifacts "$RUNNER_TEMP/dist"
           echo "::notice title=Update manifest (dry run)::signed with a TEST ONLY key generated in this job; not a release asset"
